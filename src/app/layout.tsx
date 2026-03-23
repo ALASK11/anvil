@@ -1,9 +1,26 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
+import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'SSC Bidding',
-  description: 'SSC Bidding Platform',
+  title: 'Anvil — Bidding Pipeline',
+  description: 'Control plane for the Anvil RFP bidding pipeline',
 }
+
+const navItems = [
+  { href: '/', label: 'Dashboard' },
+  { section: 'Pipeline' },
+  { href: '/pipeline/scraping', label: 'Scraping' },
+  { href: '/pipeline/dedup', label: 'Deduplication' },
+  { href: '/pipeline/parsing', label: 'Parsing' },
+  { href: '/pipeline/sourcing', label: 'Sourcing' },
+  { href: '/pipeline/ranking', label: 'Ranking' },
+  { href: '/pipeline/review', label: 'Review & Submit' },
+  { section: 'Data' },
+  { href: '/rfp', label: 'RFPs' },
+  { section: 'Admin' },
+  { href: '/admin/users', label: 'Users & Access' },
+]
 
 export default function RootLayout({
   children,
@@ -12,7 +29,33 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <div className="layout">
+          <nav className="sidebar">
+            <div className="sidebar-brand">
+              <h1>Anvil</h1>
+              <span>Bidding Pipeline</span>
+            </div>
+            {navItems.map((item, i) => {
+              if ('section' in item) {
+                return (
+                  <div key={i} className="sidebar-section">
+                    {item.section}
+                  </div>
+                )
+              }
+              return (
+                <Link key={item.href} href={item.href!} className="sidebar-link">
+                  {item.label}
+                </Link>
+              )
+            })}
+          </nav>
+          <main className="main-content">
+            {children}
+          </main>
+        </div>
+      </body>
     </html>
   )
 }

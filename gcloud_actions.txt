@@ -1,0 +1,31 @@
+# ============================================================
+# Anvil Bidding Pipeline — gcloud Actions Log
+# ============================================================
+
+# --- IAP User Access ---
+# Grant a user access to the Cloud Run service via Direct IAP.
+# Requires both run.invoker (to call the service) and
+# iap.httpsResourceAccessor (to pass through the IAP auth layer).
+
+gcloud run services add-iam-policy-binding private-nextjs-site --region=us-central1 --member="user:alaski10@gmail.com" --role="roles/run.invoker"
+
+gcloud beta iap web add-iam-policy-binding --resource-type=cloud-run --service=private-nextjs-site --region=us-central1 --member="user:alaski10@gmail.com" --role="roles/iap.httpsResourceAccessor" --project=anvil-private
+
+gcloud run services add-iam-policy-binding private-nextjs-site --region=us-central1 --member="user:mark@anvilsupplycorp.com" --role="roles/run.invoker"
+
+gcloud run services add-iam-policy-binding private-nextjs-site --region=us-central1 --member="user:apl57@cornell.edu" --role="roles/run.invoker"
+
+gcloud beta iap web add-iam-policy-binding --resource-type=cloud-run --service=private-nextjs-site --region=us-central1 --member="user:apl57@cornell.edu" --role="roles/iap.httpsResourceAccessor" --project=anvil-private
+
+# --- Service Account Permissions ---
+# Grant the default Cloud Run service account admin rights over
+# Cloud Run IAM and IAP IAM so the admin UI can manage user access.
+
+gcloud projects add-iam-policy-binding anvil-private --member="serviceAccount:169801273048-compute@developer.gserviceaccount.com" --role="roles/run.admin"
+
+gcloud projects add-iam-policy-binding anvil-private --member="serviceAccount:169801273048-compute@developer.gserviceaccount.com" --role="roles/iap.admin"
+
+# --- Docker / Artifact Registry ---
+# Authenticate Docker with Artifact Registry so you can push images.
+
+gcloud auth configure-docker us-central1-docker.pkg.dev

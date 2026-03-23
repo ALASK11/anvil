@@ -1,0 +1,1 @@
+- [project_direct_iap.md](project_direct_iap.md) — Project uses Direct IAP (GA March 2026) on Cloud Run, no LB needed

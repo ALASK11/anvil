@@ -77,11 +77,19 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Fetch Project Number for IAP API
+    const rmRes = await client.request({ url: `https://cloudresourcemanager.googleapis.com/v1/projects/${PROJECT_ID}` })
+    const projectNumber = (rmRes.data as { projectNumber: string }).projectNumber
+
     // 2. Add IAP httpsResourceAccessor via gcloud-style API
-    const iapResource = `projects/${PROJECT_ID}/iap_web/compute/services/${SERVICE_NAME}`
+    const iapResource = `projects/${projectNumber}/iap_web/cloud_run-${REGION}/services/${SERVICE_NAME}`
     const iapBase = `https://iap.googleapis.com/v1/${iapResource}`
 
-    const iapPolicyRes = await client.request({ url: `${iapBase}:getIamPolicy` })
+    const iapPolicyRes = await client.request({
+      url: `${iapBase}:getIamPolicy`,
+      method: 'POST',
+      data: { options: { requestedPolicyVersion: 3 } }
+    })
     const iapPolicy = iapPolicyRes.data as {
       bindings?: Array<{ role: string; members: string[] }>
       etag?: string
@@ -113,6 +121,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, email })
   } catch (err: unknown) {
+    console.log("error");
+    console.log(err);
     const message = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.json({ error: message }, { status: 500 })
   }
@@ -153,11 +163,19 @@ export async function DELETE(request: NextRequest) {
       },
     })
 
+    // Fetch Project Number for IAP API
+    const rmRes = await client.request({ url: `https://cloudresourcemanager.googleapis.com/v1/projects/${PROJECT_ID}` })
+    const projectNumber = (rmRes.data as { projectNumber: string }).projectNumber
+
     // 2. Remove from IAP
-    const iapResource = `projects/${PROJECT_ID}/iap_web/compute/services/${SERVICE_NAME}`
+    const iapResource = `projects/${projectNumber}/iap_web/cloud_run-${REGION}/services/${SERVICE_NAME}`
     const iapBase = `https://iap.googleapis.com/v1/${iapResource}`
 
-    const iapPolicyRes = await client.request({ url: `${iapBase}:getIamPolicy` })
+    const iapPolicyRes = await client.request({
+      url: `${iapBase}:getIamPolicy`,
+      method: 'POST',
+      data: { options: { requestedPolicyVersion: 3 } }
+    })
     const iapPolicy = iapPolicyRes.data as {
       bindings?: Array<{ role: string; members: string[] }>
       etag?: string

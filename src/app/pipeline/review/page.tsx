@@ -1,142 +1,66 @@
-// Pipeline: Review — human-in-the-loop approval before bid submission
+import { getReviewKpis, listReviewQueue } from '@/lib/db/queries/review'
 
-const MOCK_STATS = {
-  pendingReview: 45,
-  approvedToday: 12,
-  rejectedToday: 3,
-  submittedToday: 8,
+export const dynamic = 'force-dynamic'
+
+function shortId(id: string) {
+  return id.slice(0, 8)
 }
 
-const MOCK_QUEUE = [
-  {
-    id: 'REV-0201',
-    bidId: 'BID-0501',
-    rfpId: 'RFP-0312',
-    rfpTitle: 'MRE Supply Contract FY2026',
-    product: 'MRE Menu A, Case of 12',
-    merchant: 'Wornick Company',
-    rank: 1,
-    proposedPrice: 94.50,
-    estMargin: '22.1%',
-    overallScore: 0.94,
-    dueDate: '2026-04-15',
-    decision: 'pending',
-  },
-  {
-    id: 'REV-0202',
-    bidId: 'BID-0502',
-    rfpId: 'RFP-0312',
-    rfpTitle: 'MRE Supply Contract FY2026',
-    product: 'MRE Menu B, Case of 12',
-    merchant: 'Ameriqual Group',
-    rank: 2,
-    proposedPrice: 97.00,
-    estMargin: '18.3%',
-    overallScore: 0.87,
-    dueDate: '2026-04-15',
-    decision: 'pending',
-  },
-  {
-    id: 'REV-0198',
-    bidId: 'BID-0498',
-    rfpId: 'RFP-0309',
-    rfpTitle: 'IT Infrastructure Refresh',
-    product: 'Server Rack, 42U',
-    merchant: 'APC by Schneider',
-    rank: 1,
-    proposedPrice: 1399.99,
-    estMargin: '15.2%',
-    overallScore: 0.91,
-    dueDate: '2026-04-08',
-    decision: 'approved',
-    reviewer: 'alaski10@gmail.com',
-    reviewedAt: '2026-03-20',
-  },
-  {
-    id: 'REV-0199',
-    bidId: 'BID-0499',
-    rfpId: 'RFP-0309',
-    rfpTitle: 'IT Infrastructure Refresh',
-    product: 'Server Rack, 42U',
-    merchant: 'CyberPower',
-    rank: 2,
-    proposedPrice: 1249.00,
-    estMargin: '19.8%',
-    overallScore: 0.71,
-    dueDate: '2026-04-08',
-    decision: 'rejected',
-    reviewer: 'alaski10@gmail.com',
-    reviewedAt: '2026-03-20',
-    notes: 'Backorder lead time exceeds RFP deadline',
-  },
-  {
-    id: 'REV-0197',
-    bidId: 'BID-0497',
-    rfpId: 'RFP-0309',
-    rfpTitle: 'IT Infrastructure Refresh',
-    product: 'UPS 3000VA Rack Mount',
-    merchant: 'Eaton',
-    rank: 1,
-    proposedPrice: 2450.00,
-    estMargin: '14.0%',
-    overallScore: 0.89,
-    dueDate: '2026-04-08',
-    decision: 'approved',
-    reviewer: 'alaski10@gmail.com',
-    reviewedAt: '2026-03-19',
-    submittedAt: '2026-03-20',
-  },
-]
-
-function decisionBadge(d: string) {
-  const map: Record<string, string> = {
-    pending: 'badge-yellow',
-    approved: 'badge-green',
-    rejected: 'badge-red',
-    needs_revision: 'badge-purple',
-  }
-  return `badge ${map[d] || 'badge-muted'}`
+function formatCents(cents: number | null) {
+  if (cents == null) return '—'
+  return `$${(cents / 100).toFixed(2)}`
 }
 
-function daysUntil(dateStr: string): string {
-  const diff = Math.ceil((new Date(dateStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-  if (diff < 0) return 'OVERDUE'
-  if (diff <= 3) return `${diff}d (urgent)`
-  return `${diff}d`
+function decisionBadge(decision: string | null, result: string | null) {
+  if (result === 'won') return 'badge badge-green'
+  if (result === 'lost') return 'badge badge-red'
+  if (result === 'no_award') return 'badge badge-muted'
+  if (decision === 'pursue') return 'badge badge-purple'
+  if (decision === 'pass') return 'badge badge-muted'
+  return 'badge badge-yellow'
 }
 
-function urgencyColor(dateStr: string): string {
-  const diff = Math.ceil((new Date(dateStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-  if (diff < 0) return 'var(--red)'
-  if (diff <= 3) return 'var(--orange)'
-  if (diff <= 7) return 'var(--yellow)'
-  return 'var(--text-muted)'
+function decisionLabel(decision: string | null, result: string | null) {
+  if (result) return result.replace(/_/g, ' ')
+  if (decision) return decision
+  return 'pending'
+}
+
+function daysUntil(d: Date | null): { label: string; color: string } {
+  if (!d) return { label: '—', color: 'var(--text-muted)' }
+  const diff = Math.ceil((new Date(d).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+  if (diff < 0) return { label: 'OVERDUE', color: 'var(--red)' }
+  if (diff <= 3) return { label: `${diff}d (urgent)`, color: 'var(--orange)' }
+  if (diff <= 7) return { label: `${diff}d`, color: 'var(--yellow)' }
+  return { label: `${diff}d`, color: 'var(--text-muted)' }
 }
 
 export default async function ReviewPage() {
+  const [kpis, rows] = await Promise.all([getReviewKpis(), listReviewQueue(50)])
+
   return (
     <>
       <div className="page-header">
         <h1>Review &amp; Submit</h1>
-        <p>Human review queue — approve or reject ranked bids before formal submission</p>
+        <p>Bid outcomes awaiting a pursue / pass decision, plus today&apos;s activity</p>
       </div>
 
       <div className="card-grid">
         <div className="card">
-          <div className="card-label">Pending Review</div>
-          <div className="card-value" style={{ color: 'var(--yellow)' }}>{MOCK_STATS.pendingReview}</div>
+          <div className="card-label">Pending</div>
+          <div className="card-value" style={{ color: 'var(--yellow)' }}>{kpis.pending.toLocaleString()}</div>
         </div>
         <div className="card">
-          <div className="card-label">Approved Today</div>
-          <div className="card-value" style={{ color: 'var(--green)' }}>{MOCK_STATS.approvedToday}</div>
+          <div className="card-label">Pursued Today</div>
+          <div className="card-value" style={{ color: 'var(--green)' }}>{kpis.pursue_today.toLocaleString()}</div>
         </div>
         <div className="card">
-          <div className="card-label">Rejected Today</div>
-          <div className="card-value" style={{ color: 'var(--red)' }}>{MOCK_STATS.rejectedToday}</div>
+          <div className="card-label">Passed Today</div>
+          <div className="card-value" style={{ color: 'var(--red)' }}>{kpis.pass_today.toLocaleString()}</div>
         </div>
         <div className="card">
-          <div className="card-label">Submitted Today</div>
-          <div className="card-value" style={{ color: 'var(--purple)' }}>{MOCK_STATS.submittedToday}</div>
+          <div className="card-label">Resolved Today</div>
+          <div className="card-value" style={{ color: 'var(--purple)' }}>{kpis.resolved_today.toLocaleString()}</div>
         </div>
       </div>
 
@@ -145,35 +69,43 @@ export default async function ReviewPage() {
         <table>
           <thead>
             <tr>
-              <th>Review</th>
-              <th>RFP</th>
-              <th>Product</th>
-              <th>Merchant</th>
-              <th>Rank</th>
-              <th>Price</th>
+              <th>Opp</th>
+              <th>Title</th>
+              <th>Agency</th>
+              <th>Fit</th>
               <th>Margin</th>
-              <th>Score</th>
+              <th>Cost</th>
               <th>Due In</th>
               <th>Decision</th>
-              <th>Reviewer</th>
+              <th>Rationale</th>
             </tr>
           </thead>
           <tbody>
-            {MOCK_QUEUE.map((r) => (
-              <tr key={r.id}>
-                <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{r.id}</td>
-                <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{r.rfpId}</td>
-                <td style={{ fontWeight: 500 }}>{r.product}</td>
-                <td>{r.merchant}</td>
-                <td style={{ fontWeight: 700 }}>#{r.rank}</td>
-                <td>${r.proposedPrice.toFixed(2)}</td>
-                <td>{r.estMargin}</td>
-                <td>{(r.overallScore * 100).toFixed(0)}%</td>
-                <td style={{ color: urgencyColor(r.dueDate), fontWeight: 500 }}>{daysUntil(r.dueDate)}</td>
-                <td><span className={decisionBadge(r.decision)}>{r.decision}</span></td>
-                <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{r.reviewer || '—'}</td>
+            {rows.map((r) => {
+              const due = daysUntil(r.response_deadline)
+              return (
+                <tr key={r.id}>
+                  <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{shortId(r.opportunity_id)}</td>
+                  <td style={{ fontWeight: 500 }}>{r.opp_title ?? '—'}</td>
+                  <td>{r.agency ?? '—'}</td>
+                  <td>{r.fit_score ?? '—'}</td>
+                  <td>{r.sourcing_margin_pct == null ? '—' : `${r.sourcing_margin_pct.toFixed(1)}%`}</td>
+                  <td>{formatCents(r.sourcing_cost_cents)}</td>
+                  <td style={{ color: due.color, fontWeight: 500 }}>{due.label}</td>
+                  <td><span className={decisionBadge(r.decision, r.result)}>{decisionLabel(r.decision, r.result)}</span></td>
+                  <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem', maxWidth: 320 }}>
+                    {r.decision_rationale ?? '—'}
+                  </td>
+                </tr>
+              )
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={9} style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
+                  Queue empty.
+                </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>

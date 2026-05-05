@@ -1,34 +1,47 @@
-// Dashboard — Pipeline overview
+import {
+  getFunnelCounts,
+  getDashboardKpis,
+  listRecentBidDecisions,
+} from '@/lib/db/queries/dashboard'
 
-const MOCK_STAGES = [
-  { name: 'Scraped', count: 1243 },
-  { name: 'Deduped', count: 987 },
-  { name: 'Parsed', count: 842 },
-  { name: 'Sourced', count: 531 },
-  { name: 'Ranked', count: 312 },
-  { name: 'Reviewed', count: 87 },
-  { name: 'Submitted', count: 42 },
-]
+export const dynamic = 'force-dynamic'
 
-const MOCK_RECENT_RUNS = [
-  { id: 1, stage: 'scraping', status: 'completed', input: 150, output: 148, time: '2 min ago' },
-  { id: 2, stage: 'dedup', status: 'completed', input: 148, output: 132, time: '5 min ago' },
-  { id: 3, stage: 'parsing', status: 'running', input: 132, output: 89, time: '8 min ago' },
-  { id: 4, stage: 'sourcing', status: 'failed', input: 50, output: 0, time: '12 min ago' },
-  { id: 5, stage: 'ranking', status: 'completed', input: 200, output: 200, time: '1 hr ago' },
-]
-
-function statusBadge(status: string) {
-  const map: Record<string, string> = {
-    completed: 'badge-green',
-    running: 'badge-blue',
-    failed: 'badge-red',
-    partial: 'badge-yellow',
-  }
-  return `badge ${map[status] || 'badge-muted'}`
+function decisionBadge(decision: string | null, result: string | null) {
+  if (result === 'won') return 'badge badge-green'
+  if (result === 'lost') return 'badge badge-red'
+  if (result === 'no_award') return 'badge badge-muted'
+  if (decision === 'pursue') return 'badge badge-purple'
+  if (decision === 'pass') return 'badge badge-muted'
+  return 'badge badge-yellow'
 }
 
-export default function DashboardPage() {
+function decisionLabel(decision: string | null, result: string | null) {
+  if (result) return result.replace(/_/g, ' ')
+  if (decision) return decision
+  return 'pending'
+}
+
+function formatDate(d: Date | null) {
+  if (!d) return '—'
+  return new Date(d).toISOString().slice(0, 10)
+}
+
+export default async function DashboardPage() {
+  const [funnel, kpis, recent] = await Promise.all([
+    getFunnelCounts(),
+    getDashboardKpis(),
+    listRecentBidDecisions(10),
+  ])
+
+  const stages = [
+    { name: 'Opportunities', count: funnel.opportunities },
+    { name: 'Parsed', count: funnel.parsed },
+    { name: 'Sourced', count: funnel.sourced },
+    { name: 'Ranked', count: funnel.ranked },
+    { name: 'Reviewed', count: funnel.reviewed },
+    { name: 'Submitted', count: funnel.submitted },
+  ]
+
   return (
     <>
       <div className="page-header">
@@ -36,68 +49,78 @@ export default function DashboardPage() {
         <p>Real-time overview of the Anvil RFP bidding pipeline</p>
       </div>
 
-      {/* Funnel */}
       <div className="pipeline-funnel">
-        {MOCK_STAGES.map((stage, i) => (
+        {stages.map((stage, i) => (
           <div key={stage.name} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <div className="funnel-stage">
               <div className="funnel-stage-name">{stage.name}</div>
               <div className="funnel-stage-count">{stage.count.toLocaleString()}</div>
             </div>
-            {i < MOCK_STAGES.length - 1 && <div className="funnel-arrow">&rarr;</div>}
+            {i < stages.length - 1 && <div className="funnel-arrow">&rarr;</div>}
           </div>
         ))}
       </div>
 
-      {/* Summary cards */}
       <div className="card-grid">
         <div className="card">
           <div className="card-label">Active Sources</div>
-          <div className="card-value">24</div>
-          <div className="card-sub">3 failing</div>
+          <div className="card-value">{kpis.active_sources}</div>
+          <div className="card-sub">Distinct values in opportunities.source</div>
         </div>
         <div className="card">
           <div className="card-label">Pending Review</div>
-          <div className="card-value">45</div>
-          <div className="card-sub">12 high-margin</div>
+          <div className="card-value">{kpis.pending_review.toLocaleString()}</div>
+          <div className="card-sub">Scored but not decided</div>
         </div>
         <div className="card">
-          <div className="card-label">Bids Submitted (30d)</div>
-          <div className="card-value">312</div>
-          <div className="card-sub">$2.4M total value</div>
+          <div className="card-label">Pursued (30d)</div>
+          <div className="card-value">{kpis.pursued_30d.toLocaleString()}</div>
         </div>
         <div className="card">
           <div className="card-label">Win Rate</div>
-          <div className="card-value">34%</div>
-          <div className="card-sub">Up 2% from last month</div>
+          <div className="card-value">
+            {kpis.win_rate_pct == null ? '—' : `${kpis.win_rate_pct.toFixed(0)}%`}
+          </div>
+          <div className="card-sub">won / (won + lost)</div>
         </div>
       </div>
 
-      {/* Recent pipeline runs */}
       <div className="table-container">
-        <div className="table-header">Recent Pipeline Runs</div>
+        <div className="table-header">Recent Bid Decisions</div>
         <table>
           <thead>
             <tr>
-              <th>Run ID</th>
-              <th>Stage</th>
-              <th>Status</th>
-              <th>Input</th>
-              <th>Output</th>
-              <th>When</th>
+              <th>RFP</th>
+              <th>Agency</th>
+              <th>Fit Score</th>
+              <th>Decision</th>
+              <th>Decided</th>
             </tr>
           </thead>
           <tbody>
-            {MOCK_RECENT_RUNS.map((run) => (
-              <tr key={run.id}>
-                <td>#{run.id}</td>
-                <td>{run.stage}</td>
-                <td><span className={statusBadge(run.status)}>{run.status}</span></td>
-                <td>{run.input}</td>
-                <td>{run.output}</td>
-                <td style={{ color: 'var(--text-muted)' }}>{run.time}</td>
+            {recent.map((r) => (
+              <tr key={r.id}>
+                <td style={{ fontWeight: 500 }}>{r.opp_title ?? '—'}</td>
+                <td>{r.agency ?? '—'}</td>
+                <td>{r.fit_score ?? '—'}</td>
+                <td>
+                  <span className={decisionBadge(r.decision, r.result)}>
+                    {decisionLabel(r.decision, r.result)}
+                  </span>
+                </td>
+                <td style={{ color: 'var(--text-muted)' }}>{formatDate(r.decided_at)}</td>
               </tr>
             ))}
+            {recent.length === 0 && (
+              <tr>
+                <td
+                  colSpan={5}
+                  style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}
+                >
+                  No bid decisions yet.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

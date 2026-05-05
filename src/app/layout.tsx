@@ -18,6 +18,8 @@ const navItems = [
   { href: '/pipeline/review', label: 'Review & Submit' },
   { section: 'Data' },
   { href: '/rfp', label: 'RFPs' },
+  { href: '/suppliers', label: 'Suppliers' },
+  { href: '/market', label: 'Market' },
   { section: 'Admin' },
   { href: '/admin/users', label: 'Users & Access' },
 ]

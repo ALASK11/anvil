@@ -11,7 +11,7 @@ out/
 *.tfstate.backup
 .terraform.lock.hcl
 terraform.tfvars
-
+terraform.tfstate.*.backup
 # Misc
 .env
 .env.local

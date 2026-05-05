@@ -1,16 +1,9 @@
-// RFPs — browse all deduplicated RFPs and their pipeline status
+import { listOpportunities, getOpportunityKpis } from '@/lib/db/queries/opportunities'
+import type { OpportunityListRow } from '@/lib/db/types'
 
-const MOCK_RFPS = [
-  { id: 'RFP-0312', title: 'MRE Supply Contract FY2026', agency: 'US Army', published: '2026-03-18', due: '2026-04-15', products: 4, bids: 6, stage: 'review', value: '$4.7M' },
-  { id: 'RFP-0311', title: 'Tactical Radio Batteries', agency: 'USMC', published: '2026-03-17', due: '2026-04-10', products: 2, bids: 3, stage: 'ranking', value: '$890K' },
-  { id: 'RFP-0310', title: 'Janitorial Supplies Q3', agency: 'GSA', published: '2026-03-17', due: '2026-04-20', products: 12, bids: 0, stage: 'parsing', value: 'TBD' },
-  { id: 'RFP-0309', title: 'IT Infrastructure Refresh', agency: 'DLA', published: '2026-03-16', due: '2026-04-08', products: 5, bids: 8, stage: 'submitted', value: '$1.2M' },
-  { id: 'RFP-0308', title: 'Safety Equipment Bulk', agency: 'OSHA', published: '2026-03-15', due: '2026-04-12', products: 3, bids: 0, stage: 'sourcing', value: 'TBD' },
-  { id: 'RFP-0307', title: 'Safety Equipment Procurement', agency: 'VA', published: '2026-03-14', due: '2026-04-05', products: 1, bids: 0, stage: 'no_match', value: '—' },
-  { id: 'RFP-0306', title: 'Uniforms Winter Issue', agency: 'US Navy', published: '2026-03-13', due: '2026-04-18', products: 8, bids: 12, stage: 'review', value: '$2.1M' },
-]
+export const dynamic = 'force-dynamic'
 
-function stageBadge(stage: string) {
+function stageBadge(stage: string | null) {
   const map: Record<string, string> = {
     scraping: 'badge-muted',
     dedup: 'badge-muted',
@@ -20,11 +13,32 @@ function stageBadge(stage: string) {
     review: 'badge-purple',
     submitted: 'badge-green',
     no_match: 'badge-red',
+    final_rfp: 'badge-blue',
+    draft_rfp: 'badge-muted',
   }
-  return `badge ${map[stage] || 'badge-muted'}`
+  return `badge ${(stage && map[stage]) || 'badge-muted'}`
+}
+
+function shortId(id: string) {
+  return id.slice(0, 8)
+}
+
+function formatDate(d: Date | null) {
+  if (!d) return '—'
+  return new Date(d).toISOString().slice(0, 10)
+}
+
+function formatCents(cents: number | null) {
+  if (cents == null) return 'TBD'
+  const dollars = cents / 100
+  if (dollars >= 1_000_000) return `$${(dollars / 1_000_000).toFixed(1)}M`
+  if (dollars >= 1_000) return `$${(dollars / 1_000).toFixed(0)}K`
+  return `$${dollars.toFixed(0)}`
 }
 
 export default async function RFPPage() {
+  const [rows, kpis] = await Promise.all([listOpportunities(100), getOpportunityKpis()])
+
   return (
     <>
       <div className="page-header">
@@ -35,20 +49,19 @@ export default async function RFPPage() {
       <div className="card-grid">
         <div className="card">
           <div className="card-label">Total RFPs</div>
-          <div className="card-value">987</div>
+          <div className="card-value">{kpis.total.toLocaleString()}</div>
         </div>
         <div className="card">
-          <div className="card-label">Active (In Pipeline)</div>
-          <div className="card-value">142</div>
+          <div className="card-label">Active</div>
+          <div className="card-value">{kpis.active.toLocaleString()}</div>
         </div>
         <div className="card">
-          <div className="card-label">Submitted</div>
-          <div className="card-value">42</div>
+          <div className="card-label">Awarded</div>
+          <div className="card-value">{kpis.awarded.toLocaleString()}</div>
         </div>
         <div className="card">
-          <div className="card-label">No Match</div>
-          <div className="card-value">203</div>
-          <div className="card-sub">No available merchant for any line item</div>
+          <div className="card-label">Cancelled</div>
+          <div className="card-value">{kpis.cancelled.toLocaleString()}</div>
         </div>
       </div>
 
@@ -60,28 +73,39 @@ export default async function RFPPage() {
               <th>ID</th>
               <th>Title</th>
               <th>Agency</th>
-              <th>Published</th>
+              <th>Posted</th>
               <th>Due</th>
-              <th>Products</th>
-              <th>Bids</th>
+              <th>CLINs</th>
+              <th>Sources</th>
               <th>Est. Value</th>
               <th>Stage</th>
             </tr>
           </thead>
           <tbody>
-            {MOCK_RFPS.map((r) => (
+            {rows.map((r: OpportunityListRow) => (
               <tr key={r.id}>
-                <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{r.id}</td>
-                <td style={{ fontWeight: 500 }}>{r.title}</td>
-                <td>{r.agency}</td>
-                <td>{r.published}</td>
-                <td>{r.due}</td>
-                <td>{r.products}</td>
-                <td>{r.bids}</td>
-                <td>{r.value}</td>
-                <td><span className={stageBadge(r.stage)}>{r.stage.replace('_', ' ')}</span></td>
+                <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{shortId(r.id)}</td>
+                <td style={{ fontWeight: 500 }}>{r.title ?? '—'}</td>
+                <td>{r.agency ?? '—'}</td>
+                <td>{formatDate(r.posted_date)}</td>
+                <td>{formatDate(r.response_deadline)}</td>
+                <td>{r.product_count}</td>
+                <td>{r.bid_count}</td>
+                <td>{formatCents(r.estimated_value_max)}</td>
+                <td>
+                  <span className={stageBadge(r.stage)}>
+                    {r.stage ? r.stage.replace(/_/g, ' ') : '—'}
+                  </span>
+                </td>
               </tr>
             ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={9} style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
+                  No opportunities found.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

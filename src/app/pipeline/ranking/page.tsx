@@ -1,172 +1,134 @@
-// Pipeline: Ranking — scoring and stack-ranking bids
+import Link from 'next/link'
+import type { CSSProperties } from 'react'
+import { getRankingKpis, listRankings } from '@/lib/db/queries/ranking'
 
-const MOCK_STATS = {
-  totalBids: 312,
-  avgScore: 0.72,
-  avgMargin: '18.4%',
-  readyForReview: 45,
+const viewLinkStyle: CSSProperties = {
+  background: 'var(--accent)',
+  color: 'white',
+  padding: '0.2rem 0.6rem',
+  borderRadius: 4,
+  fontSize: '0.75rem',
+  fontWeight: 500,
+  textDecoration: 'none',
+  display: 'inline-block',
 }
 
-const MOCK_BIDS = [
-  {
-    id: 'BID-0501',
-    rfpId: 'RFP-0312',
-    product: 'MRE Menu A, Case of 12',
-    merchant: 'Wornick Company',
-    rank: 1,
-    overall: 0.94,
-    margin: 0.91,
-    timeliness: 0.95,
-    geography: 0.88,
-    reliability: 0.98,
-    price: 94.50,
-    estMargin: '22.1%',
-    status: 'pending_review',
-  },
-  {
-    id: 'BID-0502',
-    rfpId: 'RFP-0312',
-    product: 'MRE Menu A, Case of 12',
-    merchant: 'Ameriqual Group',
-    rank: 2,
-    overall: 0.87,
-    margin: 0.82,
-    timeliness: 0.78,
-    geography: 0.92,
-    reliability: 0.95,
-    price: 97.00,
-    estMargin: '18.3%',
-    status: 'pending_review',
-  },
-  {
-    id: 'BID-0498',
-    rfpId: 'RFP-0309',
-    product: 'Server Rack, 42U',
-    merchant: 'APC by Schneider',
-    rank: 1,
-    overall: 0.91,
-    margin: 0.88,
-    timeliness: 0.96,
-    geography: 0.85,
-    reliability: 0.93,
-    price: 1399.99,
-    estMargin: '15.2%',
-    status: 'approved',
-  },
-  {
-    id: 'BID-0499',
-    rfpId: 'RFP-0309',
-    product: 'Server Rack, 42U',
-    merchant: 'CyberPower',
-    rank: 2,
-    overall: 0.71,
-    margin: 0.85,
-    timeliness: 0.45,
-    geography: 0.80,
-    reliability: 0.74,
-    price: 1249.00,
-    estMargin: '19.8%',
-    status: 'rejected',
-  },
-  {
-    id: 'BID-0497',
-    rfpId: 'RFP-0309',
-    product: 'UPS 3000VA Rack Mount',
-    merchant: 'Eaton',
-    rank: 1,
-    overall: 0.89,
-    margin: 0.84,
-    timeliness: 0.98,
-    geography: 0.82,
-    reliability: 0.91,
-    price: 2450.00,
-    estMargin: '14.0%',
-    status: 'submitted',
-  },
-]
+export const dynamic = 'force-dynamic'
 
-function statusBadge(status: string) {
-  const map: Record<string, string> = {
-    ranked: 'badge-muted',
-    pending_review: 'badge-yellow',
-    approved: 'badge-green',
-    rejected: 'badge-red',
-    submitted: 'badge-purple',
-  }
-  return `badge ${map[status] || 'badge-muted'}`
+function shortId(id: string) {
+  return id.slice(0, 8)
 }
 
-function scoreColor(score: number): string {
-  if (score >= 0.85) return 'var(--green)'
-  if (score >= 0.7) return 'var(--yellow)'
+function formatCents(cents: number | null) {
+  if (cents == null) return '—'
+  return `$${(cents / 100).toFixed(2)}`
+}
+
+function formatDate(d: Date | null) {
+  if (!d) return '—'
+  return new Date(d).toISOString().slice(0, 10)
+}
+
+function decisionBadge(decision: string | null, result: string | null) {
+  if (result === 'won') return 'badge badge-green'
+  if (result === 'lost') return 'badge badge-red'
+  if (result === 'no_award') return 'badge badge-muted'
+  if (decision === 'pursue') return 'badge badge-purple'
+  if (decision === 'pass') return 'badge badge-muted'
+  return 'badge badge-yellow'
+}
+
+function decisionLabel(decision: string | null, result: string | null) {
+  if (result) return result.replace(/_/g, ' ')
+  if (decision) return decision
+  return 'pending'
+}
+
+function fitColor(score: number | null): string {
+  if (score == null) return 'var(--text-muted)'
+  if (score >= 80) return 'var(--green)'
+  if (score >= 60) return 'var(--yellow)'
   return 'var(--red)'
 }
 
 export default async function RankingPage() {
+  const [kpis, rows] = await Promise.all([getRankingKpis(), listRankings(50)])
+
   return (
     <>
       <div className="page-header">
         <h1>Ranking</h1>
-        <p>Stack-ranked bids scored by margin, timeliness, geography, and reliability</p>
+        <p>Bid outcomes scored by fit; sorted by fit_score descending</p>
       </div>
 
       <div className="card-grid">
         <div className="card">
-          <div className="card-label">Total Bids Ranked</div>
-          <div className="card-value">{MOCK_STATS.totalBids}</div>
+          <div className="card-label">Total Scored</div>
+          <div className="card-value">{kpis.total_scored.toLocaleString()}</div>
         </div>
         <div className="card">
-          <div className="card-label">Avg Overall Score</div>
-          <div className="card-value">{(MOCK_STATS.avgScore * 100).toFixed(0)}%</div>
+          <div className="card-label">Avg Fit Score</div>
+          <div className="card-value">{kpis.avg_fit_score.toFixed(0)}</div>
+          <div className="card-sub">0–100 scale</div>
         </div>
         <div className="card">
-          <div className="card-label">Avg Est. Margin</div>
-          <div className="card-value">{MOCK_STATS.avgMargin}</div>
+          <div className="card-label">Avg Sourcing Margin</div>
+          <div className="card-value">{kpis.avg_margin_pct.toFixed(1)}%</div>
         </div>
         <div className="card">
-          <div className="card-label">Ready for Review</div>
-          <div className="card-value">{MOCK_STATS.readyForReview}</div>
+          <div className="card-label">Awaiting Decision</div>
+          <div className="card-value">{kpis.awaiting_decision.toLocaleString()}</div>
         </div>
       </div>
 
       <div className="table-container">
-        <div className="table-header">Ranked Bids</div>
+        <div className="table-header">Ranked Bid Outcomes</div>
         <table>
           <thead>
             <tr>
-              <th>Bid</th>
-              <th>RFP</th>
-              <th>Product</th>
-              <th>Merchant</th>
-              <th>Rank</th>
-              <th>Overall</th>
-              <th>Margin</th>
-              <th>Time</th>
-              <th>Geo</th>
-              <th>Reliability</th>
-              <th>Price</th>
-              <th>Est. Margin</th>
-              <th>Status</th>
+              <th>Opp</th>
+              <th>Title</th>
+              <th>Agency</th>
+              <th>Fit</th>
+              <th>Sourcing Margin</th>
+              <th>Sourcing Cost</th>
+              <th>Supplier</th>
+              <th>Decision</th>
+              <th>Scored</th>
+              <th>Decided</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
-            {MOCK_BIDS.map((b) => (
+            {rows.map((b) => (
               <tr key={b.id}>
-                <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{b.id}</td>
-                <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{b.rfpId}</td>
-                <td style={{ fontWeight: 500 }}>{b.product}</td>
-                <td>{b.merchant}</td>
-                <td style={{ fontWeight: 700 }}>#{b.rank}</td>
-                <td style={{ color: scoreColor(b.overall), fontWeight: 600 }}>{(b.overall * 100).toFixed(0)}%</td>
-                <td style={{ color: scoreColor(b.margin) }}>{(b.margin * 100).toFixed(0)}%</td>
-                <td style={{ color: scoreColor(b.timeliness) }}>{(b.timeliness * 100).toFixed(0)}%</td>
-                <td style={{ color: scoreColor(b.geography) }}>{(b.geography * 100).toFixed(0)}%</td>
-                <td style={{ color: scoreColor(b.reliability) }}>{(b.reliability * 100).toFixed(0)}%</td>
-                <td>${b.price.toFixed(2)}</td>
-                <td>{b.estMargin}</td>
-                <td><span className={statusBadge(b.status)}>{b.status.replace('_', ' ')}</span></td>
+                <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{shortId(b.opportunity_id)}</td>
+                <td style={{ fontWeight: 500 }}>{b.opp_title ?? '—'}</td>
+                <td>{b.agency ?? '—'}</td>
+                <td style={{ color: fitColor(b.fit_score), fontWeight: 600 }}>{b.fit_score ?? '—'}</td>
+                <td>{b.sourcing_margin_pct == null ? '—' : `${b.sourcing_margin_pct.toFixed(1)}%`}</td>
+                <td>{formatCents(b.sourcing_cost_cents)}</td>
+                <td>{b.sourcing_supplier ?? '—'}</td>
+                <td><span className={decisionBadge(b.decision, b.result)}>{decisionLabel(b.decision, b.result)}</span></td>
+                <td style={{ color: 'var(--text-muted)' }}>{formatDate(b.scored_at)}</td>
+                <td style={{ color: 'var(--text-muted)' }}>{formatDate(b.decided_at)}</td>
+                <td>
+                  <Link
+                    href={`/pipeline/sourcing?opportunity_id=${b.opportunity_id}`}
+                    style={viewLinkStyle}
+                  >
+                    View
+                  </Link>
+                </td>
               </tr>
             ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={11} style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
+                  No bids scored yet.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
